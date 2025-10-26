@@ -36,6 +36,21 @@ def load_time_series_documents(data_dir: str) -> List[Document]:
             # Add dataset name metadata
             for d in docs:
                 d.metadata["source"] = csv_fp.name
+                # Convert structured row text back into key:value dict
+                row_dict = {}
+                for line in d.page_content.split("\n"):
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        row_dict[key.strip()] = value.strip()
+
+                # Extract clean date
+                date_str = row_dict.get("Date", None)
+                if date_str:
+                    # Convert "2020-10-26 00:00:00-04:00" → "2020-10-26"
+                    date_str = date_str.split(" ")[0]
+
+                # Store clean metadata (string + numbers only)
+                d.metadata["Date"] = date_str
             documents.extend(docs)
         except Exception as e:
             print(f"[ERROR] Failed loading CSV {csv_fp}: {e}")
@@ -53,6 +68,21 @@ def load_time_series_documents(data_dir: str) -> List[Document]:
             docs = loader.load()
             for d in docs:
                 d.metadata["source"] = xl_fp.name
+                # Convert structured row text back into key:value dict
+                row_dict = {}
+                for line in d.page_content.split("\n"):
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        row_dict[key.strip()] = value.strip()
+
+                # Extract clean date
+                date_str = row_dict.get("Date", None)
+                if date_str:
+                    # Convert "2020-10-26 00:00:00-04:00" → "2020-10-26"
+                    date_str = date_str.split(" ")[0]
+
+                # Store clean metadata (string + numbers only)
+                d.metadata["Date"] = date_str
             documents.extend(docs)
         except Exception as e:
             print(f"[ERROR] Failed loading Excel {xl_fp}: {e}")
