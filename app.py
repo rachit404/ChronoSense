@@ -1,89 +1,128 @@
-# import numpy as np
+import streamlit as st
+import pandas as pd
+import os
+from pathlib import Path
+from main import chrono_sense_pipeline, chat_query
+from src.chat_groq_client import ChatGroqClient
+from utils.detect_plot import detect_plot_types
 
-# from utils.extract_numeric_values import extract_numeric_values
+# --- PAGE SETUP ---
+st.set_page_config(page_title="ChronoSense", page_icon="🐦‍🔥", layout="centered")
+st.title("🐦‍🔥 ChronoSense")
 
-# from src.data_loader import load_time_series_documents
-# from src.cnn_encoder import CNNEmbeddingPipeline
+# --- DATA DIRECTORY ---
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# --- FILE UPLOADER ---
+uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+
+if uploaded_file is not None:
+    try:
+        df = pd.read_csv(uploaded_file)
+        st.success("✅ File successfully uploaded!")
+        
+        # Data preview
+        with st.expander("👁️ Preview Data", expanded=False):
+            st.dataframe(df.head(9))
+        
+        # Save file
+            file_path = os.path.join(DATA_DIR, uploaded_file.name)
+            df.to_csv(file_path, index=False)
+            print(f"[INFO] File saved to: {file_path}")
+            
+        # col = st.text_input("Column Name: ", value="Close", key="col_name")
+        # print("[INFO] Column selected:", col)
+        # print("[INFO] Column type:", type(col))
+
+        # file_path = os.path.join(DATA_DIR, uploaded_file.name)
+        # df.to_csv(file_path, index=False)
+        # print(f"[INFO] File saved to: `{file_path}`")
+
+        # with st.expander("👁️ Preview Data", width=2000):
+        #     st.dataframe(df.head(9))
+        
+        # --- Column name input ---
+        col = st.text_input("Column Name:", value="Close", key="col_name")
+        if col:
+            st.info(f"📊 Selected Column: `{col}`")
+
+            # --- Run pipeline with loader ---
+            run_clicked = st.button("🚀 Allow ChronoSense to read csv?")
+            result = False
+            if run_clicked:
+                with st.spinner("⏳ ChronoSense is Reading... Please wait."):
+                    result = chrono_sense_pipeline(uploaded_file.name, col)
+
+                if result:
+                    st.success("✅ ChronoSense pipeline completed successfully!")
+                else:
+                    st.error("❌ Pipeline failed or returned False.")
+        
+        groq_llm = ChatGroqClient()
+        # --- CHAT INTERFACE ---
+        st.markdown("---")
+        st.subheader("💬 Chat with ChronoSense")
+
+        # Initialize session state for chat
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+            
+        # --- Clear chat button (top-right) ---
+        col1, col2 = st.columns([8, 2])
+        with col1:
+            st.write("")  # spacer
+        with col2:
+            if st.button("🗑️ Clear Chat", use_container_width=True):
+                st.session_state.chat_history = []
+                # st.experimental_rerun()
+
+        # Chat input
+        user_input = st.chat_input("Ask a question about your data...")
+
+        if user_input:
+            # Add user message
+            st.session_state.chat_history.append({"role": "user", "message": user_input})
+
+            # Get AI reply
+            reply = chat_query(user_input, groq_llm)
+
+            # --- Detect relevant plots from query ---
+            plot_files = detect_plot_types(user_input, run_id="007")
+            plot_paths = []
+            for p in plot_files:
+                path = Path(f"visualizations/007/{p}")
+                if path.exists():
+                    plot_paths.append(str(path))
+
+            # Append AI message (with reply + optional plots)
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "message": reply,
+                "plots": plot_paths
+            })
 
 
-# if __name__ == "__main__":
-#     docs = load_time_series_documents("data")
-#     print(f"\nExample document:")
-#     print(f"metadata:\n{docs[0].metadata}")
-#     print(f"page_content:\n{docs[0].page_content}")
-    
-#     close_prices = extract_numeric_values(docs, col='Close')
-#     print(f"[INFO] Close Prices: {close_prices[:5]}")
-    
-#     # 3. Create windows of size 256
-#     window_size = 256
-#     windows = []
-#     for i in range(0, len(close_prices) - window_size + 1):
-#         window = close_prices[i:i + window_size]
-#         windows.append(np.array(window, dtype=np.float32))
+        # --- Display chat history ---
+        for chat in st.session_state.chat_history:
+            if chat["role"] == "user":
+                with st.chat_message("user", avatar="🎙️"):
+                    st.write(chat["message"])
 
-#     print(f"[INFO] Created {len(windows)} windows of size {window_size}")
-    
-#     # 4. Initialize CNN embedding pipeline
-#     pipeline = CNNEmbeddingPipeline(window_size=window_size, embedding_dim=128)
+            elif chat["role"] == "assistant":
+                with st.chat_message("assistant", avatar="🐦‍🔥"):
+                    st.write(chat["message"])
 
-#     # 5. Generate embeddings
-#     embeddings = pipeline.embed_windows(windows)
-# app.py
+                    # If assistant has plots, display them
+                    if "plots" in chat and chat["plots"]:
+                        st.markdown("**📊 Related Visualizations:**")
+                        cols = st.columns(len(chat["plots"]))
+                        for i, plot_path in enumerate(chat["plots"]):
+                            with cols[i]:
+                                st.image(plot_path, use_container_width=True)
 
-# app.py
-
-from src.embed_and_store import TimeSeriesEmbedder
-from src.search import TimeSeriesRetriever
-from src.query_embed_and_store import QueryEmbedAndStore
-
-if __name__ == "__main__":
-    # -------------------------------
-    # Step 1: Embed and store time-series data
-    # -------------------------------
-    ts_embedder = TimeSeriesEmbedder(
-        data_dir="data",
-        window_size=256,
-        embedding_dim=384,
-        batch_size=64,
-        persist_directory="chroma_db"
-    )
-    ts_embedder.run()
-
-    # -------------------------------
-    # Step 2: Embed and store text queries
-    # -------------------------------
-    query_embedder = QueryEmbedAndStore(
-        client=ts_embedder.client,
-        collection_name="query_embeddings",
-        model_name="all-MiniLM-L6-v2"
-    )
-
-    # Example queries
-    queries = [
-        "What was the closing price trend in October 2020?",
-        "Show recent stock spikes in S&P 500",
-        "Analyze Bitcoin closing trends in November 2021"
-    ]
-
-    # Store query embeddings
-    query_embedder.store_queries(queries, metadatas=[{"type": "finance"}]*len(queries))
-
-    # -------------------------------
-    # Step 3: Initialize retriever for numeric windows
-    # -------------------------------
-    ts_retriever = TimeSeriesRetriever(
-        persist_directory="chroma_db",
-        collection_name="financial_timeseries"
-    )
-
-    # -------------------------------
-    # Step 4: Retrieve context for each query
-    # -------------------------------
-    for query in queries:
-        context = ts_retriever.retrieve_context_str(query, top_k=5)
-        print(f"\nQuery: {query}")
-        print(f"Retrieved context:\n{context}")
-
-
+    except Exception as e:
+        st.error(f"❌ Error reading the file: {e}")
+else:
+    st.warning("Please upload a CSV file to continue.")
 

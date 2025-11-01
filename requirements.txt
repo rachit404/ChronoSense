@@ -25,3 +25,4 @@ seaborn
 python-dotenv
 rich
 pytest
+yfinance
